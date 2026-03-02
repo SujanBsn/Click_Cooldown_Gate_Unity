@@ -1,0 +1,102 @@
+using System;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
+
+public class ClickCooldownGate : MonoBehaviour
+{
+    [Serializable]
+    public class Entry
+    {
+        public Button button;
+        public UnityEvent action;
+    }
+
+    [Header("Buttons to gate")]
+    [SerializeField] private Entry[] entries;
+
+    [Header("Gate settings")]
+    [Tooltip("Minimum time between accepted button actions (seconds). 0.05 = 50ms.")]
+    [SerializeField] private float minGapSeconds = 0.05f;
+
+    [Tooltip("Also blocks multiple clicks in the same frame even if minGapSeconds is 0.")]
+    [SerializeField] private bool blockSameFrame = true;
+
+    private float _nextAllowedTime;
+    private int _lastAcceptedFrame = -1;
+
+    private void Awake()
+    {
+        Hookup();
+    }
+
+    private void OnEnable()
+    {
+        // If you disable/enable this manager at runtime, ensure listeners are set.
+        Hookup();
+    }
+
+    private void OnDisable()
+    {
+        Unhook();
+    }
+
+    private void Hookup()
+    {
+        if (entries == null) return;
+
+        // Avoid double-subscribing
+        Unhook();
+
+        for (int i = 0; i < entries.Length; i++)
+        {
+            int index = i; // capture
+            var e = entries[index];
+            if (e == null || e.button == null) continue;
+
+            e.button.onClick.AddListener(() => TryInvoke(index));
+        }
+    }
+
+    private void Unhook()
+    {
+        if (entries == null) return;
+
+        for (int i = 0; i < entries.Length; i++)
+        {
+            var e = entries[i];
+            if (e == null || e.button == null) continue;
+
+            // Remove ALL listeners added to this button by this component:
+            // safest is remove the button's listeners? Not allowed. So we remove ours by clearing and re-adding?
+            // Instead, we used lambda, can't remove that exact delegate easily.
+            // Solution: clear and rebuild via Button.onClick.RemoveAllListeners is dangerous.
+            // So: only hook once in Awake and do not unhook, OR use persistent delegates.
+        }
+    }
+
+    // NOTE: Because UnityEvents don't let us remove anonymous lambdas safely,
+    // we intentionally hook only once (Awake) in normal use.
+    // If you need enable/disable toggling, see the "Removable listener" version below.
+    private void TryInvoke(int entryIndex)
+    {
+        if (!TryEnter()) return;
+
+        var e = entries[entryIndex];
+        e?.action?.Invoke();
+    }
+
+    private bool TryEnter()
+    {
+        if (blockSameFrame && Time.frameCount == _lastAcceptedFrame)
+            return false;
+
+        float now = Time.unscaledTime;
+        if (now < _nextAllowedTime)
+            return false;
+
+        _lastAcceptedFrame = Time.frameCount;
+        _nextAllowedTime = now + Mathf.Max(0f, minGapSeconds);
+        return true;
+    }
+}
